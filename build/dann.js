@@ -18,6 +18,87 @@ if(isBrowser) {
     w = require('@fast-csv/format');
 }
 
+// Browser Download function (input element deletion):
+function downloadSTR(obj, exportName) {
+  let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(obj));
+  let downloadAnchorNode = document.createElement('a');
+  downloadAnchorNode.setAttribute("href",     dataStr);
+  downloadAnchorNode.setAttribute("download", exportName + ".json");
+  document.body.appendChild(downloadAnchorNode); // required for firefox
+  downloadAnchorNode.click();
+  downloadAnchorNode.remove();
+}
+//create the dom element & set attributes
+function domInput(modelname,targetid,callback) {
+    let funcstr = '';
+    if (callback !== undefined) {
+        funcstr = ','+callback.toString();
+    }
+    let downloadAnchorNode = document.createElement('input');
+    downloadAnchorNode.setAttribute("type", "file");
+    downloadAnchorNode.setAttribute("id", "upload");
+    downloadAnchorNode.setAttribute("onChange", "clickedUpload("+modelname+funcstr+")");
+    try {
+        if (targetid !== undefined) {
+            document.getElementById(targetid).appendChild(downloadAnchorNode);
+        } else {
+            document.body.appendChild(downloadAnchorNode);
+        }
+    } catch(err) {
+        if (err) {
+            window.addEventListener('load', function() {
+                domInput(modelname,targetid,callback);
+            })
+        }
+
+    }
+}
+// create the html element to upload the dannData.json
+function upload(modelname,targetid,callback) {
+    try {
+        domInput(modelname,targetid,callback);
+    } catch(err) {
+        console.log(err)
+    }
+
+}
+// function called when the html element is clicked
+function clickedUpload(nn,callback) {
+    let callfunc = eval(callback);
+    let element = document.getElementById('upload');
+    let file = element.files[0];
+    let reader = new FileReader();
+    reader.readAsText(file);
+    let newNN;
+    reader.onload = function() {
+        if (reader.result[0] == '{') {
+            let xdata =  JSON.parse(reader.result);
+            newNN = xdata;
+            nn.applyToModel(newNN);
+            if (callfunc !== undefined) {
+                callfunc(false);
+            } else {
+                console.log('Succesfully loaded the file.');
+            }
+        } else {
+            if (callfunc !== undefined) {
+                callfunc(true);
+            } else {
+                console.log('Error loading the file.');
+            }
+        }
+
+    };
+    reader.onerror = function() {
+        if (callfunc !== undefined) {
+            callfunc(true);
+        } else {
+            console.log(reader.error);
+        }
+    };
+    element.remove();
+}
+
 //Shortening Mathjs functions:
 const random = (a,b) => Math.random(1)*(b-a)+a;
 const exp = (x) => Math.exp(x);
@@ -141,25 +222,43 @@ function bce(predictions,target) {
 function lcl(predictions,target) {
     let sum = 0;
     let ans = 0;
-    let l = target.length;
-    for (let i = 0; i < l; i++) {
+    let n = target.length;
+    for (let i = 0; i < n;  i++) {
         let y = target[i]
         let yHat = predictions[i];
         sum += log(cosh(yHat - y));
     }
-    ans = sum/l;
+    ans = sum/n;
     return ans;
 }
 function mbe(predictions,target) {
     let sum = 0;
     let ans = 0;
-    let l = target.length;
-    for (let i = 0; i < l; i++) {
+    let n = target.length;
+    for (let i = 0; i < n;  i++) {
         let y = target[i]
         let yHat = predictions[i];
         sum += (y - yHat);
     }
-    ans = sum/this.o;
+    ans = sum/n;
+    return ans;
+}
+//New experimental function: Mean absolute exponential loss
+function mael(predictions,target) {
+    let sum = 0;
+    let ans = 0;
+    let n = target.length;
+    for (let i = 0; i < n;  i++) {
+        let y = target[i]
+        let yHat = predictions[i];
+        let x = (y - yHat);
+
+        //Mean absolute exponential function
+        let top = -x*(exp(-x)-1);
+        let down = (exp(-x)+1);
+        sum += top/down;
+    }
+    ans = sum/n;
     return ans;
 }
 function rmse(predictions,target) {
@@ -376,15 +475,17 @@ class Matrix {
         }
     }
     addRandom(magnitude,prob) {
+        let newMatrix = Matrix.make(this.rows,this.cols);
         for (let i = 0; i < this.rows; i++) {
             for(let j = 0; j < this.cols; j++) {
                 let w = this.matrix[i][j];
                 let ran = random(0,1);
                 if (ran < prob) {
-                    this.matrix[i][j] += w*random(-magnitude,magnitude);
+                    newMatrix[i][j] = w + w*random(-magnitude,magnitude);
                 }
             }
         }
+        this.set(newMatrix);
     }
     addPrecent(magnitude) {
         for (let i = 0; i < this.rows; i++) {
@@ -514,18 +615,23 @@ class Layer {
     constructor(type,arg1,arg2,arg3,arg4,arg5) {
         this.type = type;
         this.subtype = Layer.getSubtype(type);
-        if (this.type == 'hidden' || this.type == 'output') {
-            this.size = arg1;
-            let obj = Layer.stringTofunc(arg2);
-            this.setFunc(obj);
-            this.layer = new Matrix(this.size,1);
-        } else if (this.type == 'input') {
-            this.size = arg1;
-            this.layer = new Matrix(this.size,1);
+        if (this.subtype !== 'pool') {
+            // Neuron Layers
+            if (this.type == 'hidden' || this.type == 'output') {
+                this.size = arg1;
+                this.setAct(arg2);
+                this.layer = new Matrix(this.size,1);
+            } else if (this.type == 'input') {
+                this.size = arg1;
+                this.layer = new Matrix(this.size,1);
+            }
         } else if (this.subtype == 'pool') {
+            // Pooling Layers
             this.stride = arg3;
             this.sampleSize = arg2;
             this.inputSize = arg1;
+
+            //Optional X&Y size parameters
             if (arg4 !== undefined && arg5 !== undefined) {
                 this.sizeX = arg4;
                 this.sizeY = arg5;
@@ -538,9 +644,12 @@ class Layer {
                     return;
                 }
             }
+            //get the size of output.
             this.size = Layer.getPoolOutputLength(arg1,arg2,arg3,this.sizeX,this.sizeY);
             let divx = this.inputSize/this.sizeX;
             let divy = this.inputSize/this.sizeY;
+
+            // Handle Unvalid Layer Formats
             if (divx !== Math.floor(divx) && divy !== Math.floor(divy)) {
                 console.error("Dann Error: the width & height value specified to arrange the inputted array as a matrix are not valid. (The array length must be divisible by the width & height values.)");
                 console.trace();
@@ -551,22 +660,30 @@ class Layer {
                 console.trace();
                 return;
             }
+
+            //Input values.
             this.input = new Matrix(this.inputSize,1);
+            //Output values.
             this.layer = new Matrix(this.size,1);
+
             // picking the pooling function:
-            let prefix = Layer.getPrefix(this.type,4);
-            this.pickFunc = poolfuncs[prefix];
-            this.downsample = function (data,f,s) {
+            this.prefix = Layer.getPrefix(this.type,4);
+            this.poolfunc = poolfuncs[this.prefix];
+
+            //Downsampling function, appling the pool function to the segmented arrays.
+            this.downsample = function(data,f,s) {
                 this.input = Matrix.fromArray(data);
+                //Split inputs in smaller pool arrays.
                 let samples = Layer.selectPools(data,f,s,this.sizeX,this.sizeY);
                 let output = [];
                 for (let i = 0; i < samples.length; i++) {
-                    output[i] = this.pickFunc(samples[i]);
+                    output[i] = this.poolfunc(samples[i]);
                 }
                 this.layer = Matrix.fromArray(output);
                 return output;
             }
-            this.feed = function (data, options) {
+            //Feed information to the Layer to obtain an output.
+            this.feed = function(data, options) {
                 let showLog = false;
                 let table = false;
                 let f = this.sampleSize;
@@ -596,6 +713,7 @@ class Layer {
                 }
             }
         } else {
+            // Handle Unvalid Layer types.
             if (typeof this.type == 'string') {
                 console.error("Dann Error: The Layer type '"+this.type+"' is not valid.");
                 console.trace();
@@ -806,7 +924,8 @@ class Dann {
         let showLog = false;
         let mode = 'cpu';
         let table = false;
-
+        let roundData = false;
+        let dec = 1000;
         //optional parameters:
         if (options !== undefined) {
             if (options.log !== undefined) {
@@ -814,13 +933,24 @@ class Dann {
             } else {
                 showLog = false;
             }
+            if (options.decimals !== undefined) {
+                if (options.decimals > 21) {
+                    console.error('Dann Error: Maximum number of decimals is 21.');
+                    console.trace();
+                    options.decimals = 21;
+                }
+                dec = pow(10,options.decimals);
+                roundData = true;
+            }
             if (options.table !== undefined) {
                 table = options.table;
+
             }
             if (options.mode !== undefined) {
                 mode = options.mode;
                 if (mode == 'gpu') {
-                    console.warn('Gpu support in the works.')
+                    console.warn('Gpu support in the works.');
+
                     mode = 'cpu';
                 }
             } else {
@@ -839,7 +969,7 @@ class Dann {
             return this.outs;
         }
         if (this.weights.length === 0) {
-            console.error('Dann Error: The weights were not initiated. Please use the Dann.makeWeights(); function after the initialization of the layers.');
+            console.warn('Dann Warning: The weights were not initiated. Please use the Dann.makeWeights(); function after the initialization of the layers.');
             this.makeWeights();
         }
 
@@ -854,16 +984,20 @@ class Dann {
         }
 
         this.outs = Matrix.toArray(this.Layers[this.Layers.length-1].layer);
-
+        let out = this.outs;
         if (showLog == true) {
+
+            if (roundData == true) {
+                out = out.map((x) => (round(x*dec)/dec));
+            }
             if (table == true) {
                 console.log('Prediction: ');
-                console.table(this.outs);
+                console.table(out);
             } else {
-                console.log('Prediction: ',this.outs);
+                console.log('Prediction: ',out);
             }
         }
-        return this.outs;
+        return out;
     }
     backpropagate(inputs, t, options) {
 
@@ -960,7 +1094,6 @@ class Dann {
         }
     }
     mutateRandom(randomFactor,probability) {
-
         if (typeof randomFactor !== 'number') {
             console.error('Dann Error: Dann.mutateRandom(); range argument must be a number.');
             console.trace();
@@ -976,8 +1109,8 @@ class Dann {
             probability = 1;
         }
 
-        for (let i = 0; i < this.Layers.length;i++) {
-            this.Layers[i].layer.addRandom(randomFactor,probability);
+        for (let i = 0; i < this.weights.length;i++) {
+            this.weights[i].addRandom(randomFactor,probability);
         }
     }
     mutateAdd(randomFactor) {
@@ -987,35 +1120,16 @@ class Dann {
             console.trace();
             return;
         }
-        for (let i = 0; i < this.Layers.length;i++) {
-            this.Layers[i].layer.addPrecent(randomFactor);
+        for (let i = 0; i < this.weights.length;i++) {
+            this.weights[i].addPrecent(randomFactor);
         }
     }
-    // applyToModel(dataOBJ) {
-    //
-    // }
-    save(name, options) {
-        let path;
-        let overwritten = false;
-        let report = false;
-        let result = 0;
-        let rstr = 'none';
-        //options
-        if (options !== undefined) {
-            if (options.report !== undefined) {
-                report = options.report;
-            }
-            if (options.test !== undefined) {
-                if (typeof options.test == 'function') {
-                    let testfunc = options.test;
-                    result = testfunc()*100;
-                    rstr = result+"%"
-                } else {
-                    console.error("Dann Error: the test option can only be a function.");
-                    console.trace();
-                }
-            }
-        }
+    static createFromObject(data) {
+        const model = new Dann();
+        model.applyToModel(data);
+        return model;
+    }
+    dataObject() {
         //weights
         let wdata = [];
         for (let i = 0; i < this.weights.length;i++) {
@@ -1046,7 +1160,43 @@ class Dann {
             gdata[i] =  JSON.stringify(this.gradients[i].matrix);
         }
         let g_str = JSON.stringify(gdata);
-        let dataOBJ = {wstr: w_str,lstr:l_str,bstr:b_str,estr:e_str,gstr:g_str,arch:this.arch,lrate:this.lr,lf:this.lossfunc_s,loss:this.loss,e:this.epoch};
+        const data = {
+            wstr: w_str,
+            lstr:l_str,
+            bstr:b_str,
+            estr:e_str,
+            gstr:g_str,
+            arch:this.arch,
+            lrate:this.lr,
+            lf:this.lossfunc_s,
+            loss:this.loss,
+            e:this.epoch
+        };
+        return data;
+    }
+    save(name, options) {
+        let path;
+        let overwritten = false;
+        let report = false;
+        let result = 0;
+        let rstr = 'none';
+        //options
+        if (options !== undefined) {
+            if (options.report !== undefined) {
+                report = options.report;
+            }
+            if (options.test !== undefined) {
+                if (typeof options.test == 'function') {
+                    let testfunc = options.test;
+                    result = testfunc()*100;
+                    rstr = result+"%"
+                } else {
+                    console.error("Dann Error: the test option can only be a function.");
+                    console.trace();
+                }
+            }
+        }
+        let dataOBJ = this.dataObject();
 
         if (isBrowser) {
             downloadSTR(dataOBJ,name);
@@ -1146,14 +1296,6 @@ class Dann {
         this.arch = dataOBJ.arch;
         this.epoch = dataOBJ.e;
 
-        if (isBrowser) {
-            console.log("");
-            //console.log("Succesfully loaded the Dann Model");
-        } else {
-            console.log('\x1b[32m',"");
-            //console.log("Succesfully loaded the Dann Model");
-            console.log("\x1b[0m","");
-        }
         return this;
     }
     static createModelFromJSON(model,dataOBJ) {
@@ -1161,21 +1303,10 @@ class Dann {
         nn.applyToModel(JSON.stringify(dataOBJ));
         return Object.assign(nn,model);;
     }
-    static load(name) {
-        if (isBrowser) {
-            nn.load(name, function () {
-                return this;
-            });
-        } else {
-            nn.load(name, function () {
-                return this;
-            });
-        }
-    }
-    load(name, callback) {
-        if (isBrowser) {
-            upload(name,callback);
 
+    load(name,arg2, arg3) {
+        if (isBrowser) {
+            upload(name,arg2,arg3);
         } else {
             let path = './savedDanns/'+name+'/dannData.json';
             if (fs.existsSync(path)) {
@@ -1184,14 +1315,22 @@ class Dann {
 
                 let newNN = xdata;
                 this.applyToModel(newNN);
-                if (callback !== undefined) {
-                    callback(false);
+                if (typeof arg2 == 'function') {
+                    arg2(false);
+                } else {
+                    let type = (typeof arg2);
+                    console.error('Dann Error: callback specified is not a function, the funtion recieved a '+type+' instead');
+                    console.trace();
                 }
 
             } else {
 
-                if (callback !== undefined) {
-                    callback(true);
+                if (typeof arg2 == 'function') {
+                    arg2(true);
+                } else if (typeof arg2 !== 'function') {
+                    let type = (typeof arg2);
+                    console.error('Dann Error: callback specified is not a function, the funtion recieved a '+type+' instead');
+                    console.trace();
                 } else {
                     console.error('Dann Error: file not found');
                     console.trace();
@@ -1270,7 +1409,7 @@ class Dann {
             console.log("Dann NeuralNetwork:");
         }
         if (showBaseSettings) {
-            console.log(" ");
+
             console.log("  Layers:")
             for (let i = 0; i < this.Layers.length;i++) {
                 let layerObj = this.Layers[i];
@@ -1294,7 +1433,7 @@ class Dann {
             }
         }
         if (showErrors) {
-            console.log(" ");
+
             console.log("  Errors:");
             for (let i = 0; i < this.errors.length; i++) {
                 let e = Matrix.toArray(this.errors[i]);
@@ -1307,7 +1446,7 @@ class Dann {
             }
         }
         if (showGradients) {
-            console.log(" ");
+
             console.log("  Gradients:");
             for (let i = 0; i < this.gradients.length; i++) {
                 let g = Matrix.toArray(this.gradients[i]);
@@ -1319,7 +1458,7 @@ class Dann {
             }
         }
         if (showWeights) {
-            console.log(" ");
+
             console.log("  Weights:");
             for (let i = 0; i < this.weights.length; i++) {
                 let w = this.weights[i];
@@ -1327,7 +1466,7 @@ class Dann {
             }
         }
         if (showBiases) {
-            console.log(" ");
+
             console.log("  Biases:");
             for (let i = 0; i < this.biases.length; i++) {
                 let b = Matrix.toArray(this.biases[i]);
@@ -1339,9 +1478,9 @@ class Dann {
             }
         }
         if (showOther) {
-            console.log(" ");
+
             console.log("  Other Values: ");
-            console.log(" ");
+
             console.log("    Learning rate: " + this.lr);
             console.log("    Loss Function: " + this.lossfunc.name);
             console.log("    Current Epoch: " + this.epoch);
@@ -1352,62 +1491,76 @@ class Dann {
     }
 }
 
-// Browser Download function:
-function downloadSTR(obj, exportName) {
-  let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(obj));
-  let downloadAnchorNode = document.createElement('a');
-  downloadAnchorNode.setAttribute("href",     dataStr);
-  downloadAnchorNode.setAttribute("download", exportName + ".json");
-  document.body.appendChild(downloadAnchorNode); // required for firefox
-  downloadAnchorNode.click();
-  downloadAnchorNode.remove();
-}
-// create the html element to upload the dannData.json
-function upload(modelname,callback) {
-    let funcstr = '';
-    if (callback !== undefined) {
-        funcstr = ','+callback.toString();
+const XOR = [
+    {
+        input: [1,0],
+        output: [1]
+    },
+    {
+        input: [0,1],
+        output: [1]
+    },
+    {
+        input: [0,0],
+        output: [0]
+    },
+    {
+        input: [1,1],
+        output: [0]
     }
+];
 
-    let downloadAnchorNode = document.createElement('input');
-    downloadAnchorNode.setAttribute("type", "file");
-    downloadAnchorNode.setAttribute("id", "upload");
-    downloadAnchorNode.setAttribute("onChange", "clickedUpload("+modelname+funcstr+")");
-    document.body.appendChild(downloadAnchorNode);
-
-
+function bitLength(x) {
+    if (x < 1) {
+        return 1;
+    } else {
+        return Math.floor(Math.log(x)/Math.log(2))+1;
+    }
 }
-// function called when the html element is clicked
-function clickedUpload(nn,callback) {
-
-    let callfunc = eval(callback);
-    let element = document.getElementById('upload');
-    let file = element.files[0];
-    let reader = new FileReader();
-    reader.readAsText(file);
-    let newNN;
-    reader.onload = function() {
-        let xdata =  JSON.parse(reader.result);
-        newNN = xdata;
-        nn.applyToModel(newNN);
-        if (callfunc !== undefined) {
-            callfunc(false);
-        }
-    };
-    reader.onerror = function() {
-        if (callfunc !== undefined) {
-            callfunc(true);
+function numberToBinary(x,size) {
+    let value = x;
+    let sample = value.toString(2);
+    let arr = [];
+    let k = bitLength(x)-1;
+    for (let i = size-1; i >= 0; i--) {
+        let char = sample.charAt(k);
+        if (char == '') {
+            arr[i] = 0;
         } else {
-            console.log(reader.error);
+            arr[i] = JSON.parse(char);
         }
-    };
-    element.remove();
+        k--;
+    }
+    return arr;
+}
+function makeBinary(bitsize, afunc) {
+    let func;
+    if (afunc !== undefined) {
+        func = afunc
+    } else {
+        func = function (x) {
+            return x+1;
+        }
+    }
+    let data = [];
+    let elementslength = Math.pow(2,bitsize);
+    let size = bitLength(bitsize)
+    for (let i = 0; i < Math.pow(2,bitsize)-1; i++) {
+        let targetNum = func(i);
+        if (bitLength(targetNum) <= bitsize) {
+            let obj = {
+                input: numberToBinary(i,bitsize),
+                target: numberToBinary(targetNum,bitsize)
+            }
+            data.push(obj);
+        }
+    }
+    return data;
 }
 
 // Exporting Functions:
 let activations = {
-    leakySigmoid: leakySigmoid,
-    leakySigmoid_d: leakySigmoid_d,
+    //Basic:
     sigmoid: sigmoid,
     sigmoid_d: sigmoid_d,
     tanH: tanH,
@@ -1418,17 +1571,23 @@ let activations = {
     reLU_d: reLU_d,
     leakyReLU: leakyReLU,
     leakyReLU_d: leakyReLU_d,
+    //Experimental:
+    leakySigmoid: leakySigmoid,
+    leakySigmoid_d: leakySigmoid_d,
     leakyReLUCapped: leakyReLUCapped,
     leakyReLUCapped_d: leakyReLUCapped_d
 }
 let lossfuncs = {
+    //Basic
     mae: mae,
     bce: bce,
     lcl: lcl,
     mbe: mbe,
     mce: mce,
     mse: mse,
-    rmse: rmse
+    rmse: rmse,
+    //Experimental:
+    mael: mael
 }
 let poolfuncs = {
     max: max,
@@ -1443,6 +1602,8 @@ if (!isBrowser) {
         matrix: Matrix,
         activations: activations,
         lossfuncs: lossfuncs,
-        poolfuncs: poolfuncs
+        poolfuncs: poolfuncs,
+        xor: XOR,
+        makeBinary: makeBinary
     }
 }

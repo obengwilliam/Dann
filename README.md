@@ -7,9 +7,9 @@
 <p align="center">
     <a href="https://www.npmjs.com/package/dannjs" target="_blank"><img src="https://img.shields.io/npm/v/dannjs?style=flat&color=f69e7b&labelColor=383e56" alt="versionNpmStat"/></a> <a href="https://github.com/matiasvlevi/Dann" target="_blank"><img src="https://img.shields.io/github/repo-size/matiasvlevi/Dann?style=flat&label=size&color=f69e7b&labelColor=383e56" alt="repoSize"/></a> <a href="https://www.npmjs.com/package/dannjs" target="_blank"><img src="https://img.shields.io/npm/dt/dannjs?style=flat&color=f69e7b&labelColor=383e56" alt="downloadNpmStat"/></a> <a href="https://raw.githubusercontent.com/matiasvlevi/Dann/master/LICENSE" target="_blank"><img alt="GitHub" src="https://img.shields.io/github/license/matiasvlevi/dann?color=f69e7b&labelColor=383e56" alt="Liscence"></a>
 </p>
-<h4 align="center">Easy way to create neural networks in Javascript</h4>
+<h4 align="center">Deep Neural Network Sandbox for Javascript</h4>
 <p align="center">
-    Train a neural network with your dataset & save it's trained state!
+    Train a neural network with your data & save it's trained state!
 
 </p>
 
@@ -18,6 +18,8 @@
   <a href="#Installation">Installation</a> •
   <a href="#Getting-started">Getting started</a> •
   <a href="https://github.com/matiasvlevi/Dann/wiki">Docs</a> •
+  <a href="https://github.com/matiasvlevi/Dann/blob/master/CONTRIBUTING.md">Contribute</a> •
+  <a href="https://discord.gg/8yBTnBVf">Discord</a> •
   <a href="#license">License</a>
 </p>
 <br/>
@@ -26,7 +28,7 @@
 ## Installation
 ### CDN :
 ```html
-<script src="https://cdn.jsdelivr.net/gh/matiasvlevi/dann@v2.2.2d/build/dann.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/matiasvlevi/dann@v2.2.4e/build/dann.min.js"></script>
 ```
 ### Node :
 ```
@@ -60,10 +62,7 @@ const poolfuncs = dn.poolfuncs;
 ### Basic model construction
 Setting up a small (4,6,6,2) neural network.
 ```js
-const dn = require('dannjs');
-const Dann = dn.dann;
-
-let nn = new Dann(4,2);
+const nn = new Dann(4,2);
 nn.addHiddenLayer(6,'leakyReLU');
 nn.addHiddenLayer(6,'leakyReLU');
 nn.outputActivation('tanH');
@@ -77,25 +76,24 @@ nn.log({details:true});
 ### Train by backpropagation
 Training with a dataset.
 ```js
-//some example data... 4 inputs, 2 outputs
+//XOR 2 inputs, 1 output
 const dataset = [
     {
-        input: [0,1,0,0],
-        output: [0,1]
+        input: [0,0],
+        output: [0]
     },
     {
-        input: [0,0,0,1],
-        output: [0,1]
+        input: [1,0],
+        output: [1]
     },
     {
-        input: [0,1,0,1],
-        output: [1,0]
+        input: [0,1],
+        output: [1]
     },
     {
-        input: [0,1,1,0],
-        output: [1,1]
-    },
-    // ... more data
+        input: [1,1],
+        output: [0]
+    }
 ];
 
 //train 1 epoch
@@ -129,16 +127,13 @@ for (let i = 0; i < population; i++) {
 
 <br/>
 
-### Documentation
-https://dannjs.org#docs
-
 ### Demo:
 [AI predicts San-francisco Housing prices.](https://dannjs.org/livedemo.html) <br/>
 more examples & demos [here](https://dannjs.org/#exm)
 <br/>
 
-#### Contact
-matias@dannjs.org
+### Contribute
+[Contributor docs](https://github.com/matiasvlevi/Dann/blob/master/CONTRIBUTING.md)
 
 #### Report Bugs
 [Report an issue](https://github.com/matiasvlevi/Dann/issues/new)
@@ -154,6 +149,9 @@ matias@dannjs.org
 <br/>
 <br/>
 <br/>
+
+#### Contact
+matias@dannjs.org
 
 ## License
 

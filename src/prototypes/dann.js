@@ -114,7 +114,8 @@ class Dann {
         let showLog = false;
         let mode = 'cpu';
         let table = false;
-
+        let roundData = false;
+        let dec = 1000;
         //optional parameters:
         if (options !== undefined) {
             if (options.log !== undefined) {
@@ -122,13 +123,24 @@ class Dann {
             } else {
                 showLog = false;
             }
+            if (options.decimals !== undefined) {
+                if (options.decimals > 21) {
+                    console.error('Dann Error: Maximum number of decimals is 21.');
+                    console.trace();
+                    options.decimals = 21;
+                }
+                dec = pow(10,options.decimals);
+                roundData = true;
+            }
             if (options.table !== undefined) {
                 table = options.table;
+
             }
             if (options.mode !== undefined) {
                 mode = options.mode;
                 if (mode == 'gpu') {
-                    console.warn('Gpu support in the works.')
+                    console.warn('Gpu support in the works.');
+
                     mode = 'cpu';
                 }
             } else {
@@ -147,7 +159,7 @@ class Dann {
             return this.outs;
         }
         if (this.weights.length === 0) {
-            console.error('Dann Error: The weights were not initiated. Please use the Dann.makeWeights(); function after the initialization of the layers.');
+            console.warn('Dann Warning: The weights were not initiated. Please use the Dann.makeWeights(); function after the initialization of the layers.');
             this.makeWeights();
         }
 
@@ -162,16 +174,20 @@ class Dann {
         }
 
         this.outs = Matrix.toArray(this.Layers[this.Layers.length-1].layer);
-
+        let out = this.outs;
         if (showLog == true) {
+
+            if (roundData == true) {
+                out = out.map((x) => (round(x*dec)/dec));
+            }
             if (table == true) {
                 console.log('Prediction: ');
-                console.table(this.outs);
+                console.table(out);
             } else {
-                console.log('Prediction: ',this.outs);
+                console.log('Prediction: ',out);
             }
         }
-        return this.outs;
+        return out;
     }
     backpropagate(inputs, t, options) {
 
@@ -268,7 +284,6 @@ class Dann {
         }
     }
     mutateRandom(randomFactor,probability) {
-
         if (typeof randomFactor !== 'number') {
             console.error('Dann Error: Dann.mutateRandom(); range argument must be a number.');
             console.trace();
@@ -284,8 +299,8 @@ class Dann {
             probability = 1;
         }
 
-        for (let i = 0; i < this.Layers.length;i++) {
-            this.Layers[i].layer.addRandom(randomFactor,probability);
+        for (let i = 0; i < this.weights.length;i++) {
+            this.weights[i].addRandom(randomFactor,probability);
         }
     }
     mutateAdd(randomFactor) {
@@ -295,35 +310,16 @@ class Dann {
             console.trace();
             return;
         }
-        for (let i = 0; i < this.Layers.length;i++) {
-            this.Layers[i].layer.addPrecent(randomFactor);
+        for (let i = 0; i < this.weights.length;i++) {
+            this.weights[i].addPrecent(randomFactor);
         }
     }
-    // applyToModel(dataOBJ) {
-    //
-    // }
-    save(name, options) {
-        let path;
-        let overwritten = false;
-        let report = false;
-        let result = 0;
-        let rstr = 'none';
-        //options
-        if (options !== undefined) {
-            if (options.report !== undefined) {
-                report = options.report;
-            }
-            if (options.test !== undefined) {
-                if (typeof options.test == 'function') {
-                    let testfunc = options.test;
-                    result = testfunc()*100;
-                    rstr = result+"%"
-                } else {
-                    console.error("Dann Error: the test option can only be a function.");
-                    console.trace();
-                }
-            }
-        }
+    static createFromObject(data) {
+        const model = new Dann();
+        model.applyToModel(data);
+        return model;
+    }
+    dataObject() {
         //weights
         let wdata = [];
         for (let i = 0; i < this.weights.length;i++) {
@@ -354,7 +350,43 @@ class Dann {
             gdata[i] =  JSON.stringify(this.gradients[i].matrix);
         }
         let g_str = JSON.stringify(gdata);
-        let dataOBJ = {wstr: w_str,lstr:l_str,bstr:b_str,estr:e_str,gstr:g_str,arch:this.arch,lrate:this.lr,lf:this.lossfunc_s,loss:this.loss,e:this.epoch};
+        const data = {
+            wstr: w_str,
+            lstr:l_str,
+            bstr:b_str,
+            estr:e_str,
+            gstr:g_str,
+            arch:this.arch,
+            lrate:this.lr,
+            lf:this.lossfunc_s,
+            loss:this.loss,
+            e:this.epoch
+        };
+        return data;
+    }
+    save(name, options) {
+        let path;
+        let overwritten = false;
+        let report = false;
+        let result = 0;
+        let rstr = 'none';
+        //options
+        if (options !== undefined) {
+            if (options.report !== undefined) {
+                report = options.report;
+            }
+            if (options.test !== undefined) {
+                if (typeof options.test == 'function') {
+                    let testfunc = options.test;
+                    result = testfunc()*100;
+                    rstr = result+"%"
+                } else {
+                    console.error("Dann Error: the test option can only be a function.");
+                    console.trace();
+                }
+            }
+        }
+        let dataOBJ = this.dataObject();
 
         if (isBrowser) {
             downloadSTR(dataOBJ,name);
@@ -454,14 +486,6 @@ class Dann {
         this.arch = dataOBJ.arch;
         this.epoch = dataOBJ.e;
 
-        if (isBrowser) {
-            console.log("");
-            //console.log("Succesfully loaded the Dann Model");
-        } else {
-            console.log('\x1b[32m',"");
-            //console.log("Succesfully loaded the Dann Model");
-            console.log("\x1b[0m","");
-        }
         return this;
     }
     static createModelFromJSON(model,dataOBJ) {
@@ -469,20 +493,10 @@ class Dann {
         nn.applyToModel(JSON.stringify(dataOBJ));
         return Object.assign(nn,model);;
     }
-    static load(name) {
+
+    load(name,arg2, arg3) {
         if (isBrowser) {
-            nn.load(name, function () {
-                return this;
-            });
-        } else {
-            nn.load(name, function () {
-                return this;
-            });
-        }
-    }
-    load(name, callback) {
-        if (isBrowser) {
-            upload(name,callback);
+            upload(name,arg2,arg3);
         } else {
             let path = './savedDanns/'+name+'/dannData.json';
             if (fs.existsSync(path)) {
@@ -491,14 +505,22 @@ class Dann {
 
                 let newNN = xdata;
                 this.applyToModel(newNN);
-                if (callback !== undefined) {
-                    callback(false);
+                if (typeof arg2 == 'function') {
+                    arg2(false);
+                } else {
+                    let type = (typeof arg2);
+                    console.error('Dann Error: callback specified is not a function, the funtion recieved a '+type+' instead');
+                    console.trace();
                 }
 
             } else {
 
-                if (callback !== undefined) {
-                    callback(true);
+                if (typeof arg2 == 'function') {
+                    arg2(true);
+                } else if (typeof arg2 !== 'function') {
+                    let type = (typeof arg2);
+                    console.error('Dann Error: callback specified is not a function, the funtion recieved a '+type+' instead');
+                    console.trace();
                 } else {
                     console.error('Dann Error: file not found');
                     console.trace();
@@ -577,7 +599,7 @@ class Dann {
             console.log("Dann NeuralNetwork:");
         }
         if (showBaseSettings) {
-            console.log(" ");
+
             console.log("  Layers:")
             for (let i = 0; i < this.Layers.length;i++) {
                 let layerObj = this.Layers[i];
@@ -601,7 +623,7 @@ class Dann {
             }
         }
         if (showErrors) {
-            console.log(" ");
+
             console.log("  Errors:");
             for (let i = 0; i < this.errors.length; i++) {
                 let e = Matrix.toArray(this.errors[i]);
@@ -614,7 +636,7 @@ class Dann {
             }
         }
         if (showGradients) {
-            console.log(" ");
+
             console.log("  Gradients:");
             for (let i = 0; i < this.gradients.length; i++) {
                 let g = Matrix.toArray(this.gradients[i]);
@@ -626,7 +648,7 @@ class Dann {
             }
         }
         if (showWeights) {
-            console.log(" ");
+
             console.log("  Weights:");
             for (let i = 0; i < this.weights.length; i++) {
                 let w = this.weights[i];
@@ -634,7 +656,7 @@ class Dann {
             }
         }
         if (showBiases) {
-            console.log(" ");
+
             console.log("  Biases:");
             for (let i = 0; i < this.biases.length; i++) {
                 let b = Matrix.toArray(this.biases[i]);
@@ -646,9 +668,9 @@ class Dann {
             }
         }
         if (showOther) {
-            console.log(" ");
+
             console.log("  Other Values: ");
-            console.log(" ");
+
             console.log("    Learning rate: " + this.lr);
             console.log("    Loss Function: " + this.lossfunc.name);
             console.log("    Current Epoch: " + this.epoch);
